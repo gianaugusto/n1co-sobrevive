@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check . && ruff format --check .
+      - run: mypy src
+      - name: Start PostgreSQL and Kafka
+        working-directory: .
+        run: docker compose up -d --wait postgres kafka
+      - name: Tests (PostgreSQL + Kafka)
+        env:
+          DATABASE_URL: postgresql+asyncpg://forgetme:forgetme@localhost:5432/forgetme
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+        run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_AUTH0_DOMAIN: example.auth0.com
+          VITE_AUTH0_CLIENT_ID: ci
+          VITE_AUTH0_AUDIENCE: https://api.example
